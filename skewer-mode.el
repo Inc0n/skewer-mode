@@ -168,14 +168,14 @@
 
 When hook functions are called, the current buffer is the buffer
 to be served to the client (a defservlet), with skewer.js script
-already inserted. This is the chance for other packages to insert
+already inserted.  This is the chance for other packages to insert
 their own JavaScript to extend skewer in the browser, such as
 adding a new type handler.")
 
 (defvar skewer-response-hook ()
-  "Hook to run when a response arrives from the browser. Used for
-catching messages from the browser with no associated
-callback. The response object is passed to the hook function.")
+  "Hook to run when a response arrives from the browser.
+Used for catching messages from the browser with no associated
+callback.  The response object is passed to the hook function.")
 
 (defvar skewer-timeout 3600
   "Maximum time to wait on the browser to respond, in seconds.")
@@ -190,8 +190,8 @@ callback. The response object is passed to the hook function.")
   "Queued messages for the browser.")
 
 (defvar skewer--last-timestamp 0
-  "Timestamp of the last browser response. Use
-`skewer-last-seen-seconds' to access this.")
+  "Timestamp of the last browser response.
+Use `skewer-last-seen-seconds' to access this.")
 
 (cl-defstruct skewer-client
   "A client connection awaiting a response."
@@ -217,7 +217,7 @@ callback. The response object is passed to the hook function.")
     (skewer-process-queue)))
 
 (defun skewer-clients-tabulate ()
-  "Prepare client list for tabulated-list-mode."
+  "Prepare client list for `tabulated-list-mode'."
   (cl-loop for client in skewer-clients collect
            (let ((proc (skewer-client-proc client))
                  (agent (skewer-client-agent client)))
@@ -263,10 +263,22 @@ callback. The response object is passed to the hook function.")
 
 ;; Servlets
 
-(defservlet skewer "text/javascript; charset=UTF-8" ()
-  (insert-file-contents (expand-file-name "skewer.js" skewer-data-root))
-  (goto-char (point-max))
-  (run-hooks 'skewer-js-hook))
+(defun httpd/skewer (proc path &rest args)
+  (with-httpd-buffer proc "text/plain; charset=UTF-8"
+    (insert "404 not found")
+    ;; (setq path (s-chop-prefix "/skewer/" path))
+    ;; (message "getting %s" path)
+    ;; (if (and path (file-exists-p path))
+    ;; 	(insert-file-contents path)
+    ;;   (insert ""))
+    ))
+
+(defun httpd/skewer.js (proc &rest args)
+  (with-httpd-buffer proc "text/javascript; charset=UTF-8"
+    (message "skewer.js loaded")
+    (insert-file-contents (expand-file-name "skewer.js" skewer-data-root))
+    (goto-char (point-max))
+    (run-hooks 'skewer-js-hook)))
 
 (defun httpd/skewer/get (proc _path _query req &rest _args)
   (skewer-queue-client proc req))
@@ -298,7 +310,7 @@ callback. The response object is passed to the hook function.")
 ;; Minibuffer display
 
 (defun skewer-success-p (result)
-  "Return T if result was a success."
+  "Return T if RESULT was a success."
   (equal "success" (cdr (assoc 'status result))))
 
 (define-derived-mode skewer-error-mode special-mode "skewer-error"
@@ -319,7 +331,7 @@ callback. The response object is passed to the hook function.")
   (propertize (or string "<unknown>") 'font-lock-face 'skewer-error-face))
 
 (defun skewer-post-minibuffer (result)
-  "Report results in the minibuffer or the error buffer."
+  "Report RESULTs in the minibuffer or the error buffer."
   (if (skewer-success-p result)
       (let ((value (cdr (assoc 'value result)))
             (time (cdr (assoc 'time result))))
@@ -529,30 +541,15 @@ waiting browser and insert the result in the buffer at point."
 
 ;; Script loading
 
-(defvar skewer-hosted-scripts (cache-table-create skewer-timeout)
-  "Map of hosted scripts to IDs.")
-
-(defun skewer-host-script (string)
-  "Host script STRING from the script servlet, returning the script ID."
-  (let ((id (random most-positive-fixnum)))
-    (prog1 id
-      (setf (cache-table-get id skewer-hosted-scripts) string))))
-
 (defun skewer-load-buffer ()
   "Load the entire current buffer into the browser. A snapshot of
 the buffer is hosted so that browsers visiting late won't see an
 inconsistent buffer."
   (interactive)
-  (let ((id (skewer-host-script (buffer-string)))
-        (buffer-name (buffer-name)))
-    (skewer-eval (format "/skewer/script/%d/%s"
-                         id (url-hexify-string buffer-name))
+  (let ((buffer-name (buffer-name)))
+    (skewer-eval (format "/skewer/buffer/%s" (url-hexify-string buffer-name))
                  (lambda (_) (message "%s loaded" buffer-name))
                  :type "script")))
-
-(defservlet skewer/script "text/javascript; charset=UTF-8" (path)
-  (let ((id (string-to-number (nth 3 (split-string path "/")))))
-    (insert (cache-table-get id skewer-hosted-scripts ""))))
 
 ;; Define the minor mode
 
